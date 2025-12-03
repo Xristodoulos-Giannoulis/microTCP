@@ -24,7 +24,31 @@
 microtcp_sock_t
 microtcp_socket (int domain, int type, int protocol)
 {
+  microtcp_sock_t this_sock;
+  int sock ;
+  if (( sock = socket ( AF_INET , SOCK_DGRAM , IPPROTO_UDP )) == -1) {
+    perror ( " SOCKET COULD NOT BE OPENED " );
+    exit ( EXIT_FAILURE );
+  }
+  this_sock.sd = sock;
+  this_sock.state = CLOSED;
+  this_sock.init_win_size = MICROTCP_WIN_SIZE;
+  this_sock.curr_win_size = MICROTCP_WIN_SIZE;
+  this_sock.recvbuf = malloc(MICROTCP_RECVBUF_LEN);
+  this_sock.buf_fill_level = 0;
+  this_sock.cwnd = MICROTCP_INIT_CWND;
+  this_sock.ssthresh = MICROTCP_INIT_SSTHRESH;
+  this_sock.seq_number = 0;
+  this_sock.ack_number = 0;
+  this_sock.packets_send = 0;
+  this_sock.packets_received = 0;
+  this_sock.packets_lost = 0;
+  this_sock.bytes_received = 0;
+  this_sock.bytes_lost = 0;
+  this_sock.bytes_send = 0;
+  return this_sock;
   /* Your code here */
+
 }
 
 int
@@ -45,6 +69,7 @@ int
 microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address,
                  socklen_t address_len)
 {
+
   /* Your code here */
 }
 
