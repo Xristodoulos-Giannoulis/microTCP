@@ -25,10 +25,10 @@ microtcp_sock_t
 microtcp_socket (int domain, int type, int protocol)
 {
   microtcp_sock_t this_sock;
-  int sock ;
-  if (( sock = socket ( AF_INET , SOCK_DGRAM , IPPROTO_UDP )) == -1) {
+  int sock;
+  if ((sock = socket ( AF_INET , SOCK_DGRAM , IPPROTO_UDP )) == -1) {
     perror ( " SOCKET COULD NOT BE OPENED " );
-    exit ( EXIT_FAILURE );
+    exit ( EXIT_FAILURE );  
   }
   this_sock.sd = sock;
   this_sock.state = CLOSED;
