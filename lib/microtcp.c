@@ -55,22 +55,53 @@ int
 microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address,
                socklen_t address_len)
 {
+  //address_len kinda useless here, maybe because IPv6 and IPv4 have different sizes?
+  if ( bind ( socket->sd , address , address_len ) == -1 ) {
+    perror ( " BINDING FAILED " );
+    exit ( EXIT_FAILURE );
+  }
   /* Your code here */
 }
 
 int
 microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address,
-                  socklen_t address_len)
+                  socklen_t address_len) //called by client, given the client's socket, and the destination
+                  //(server) address (IP + port)
 {
-  /* Your code here */
+  if(socket->state != CLOSED) {
+    return -1; //socket already used
+  }
+  uint32_t my_seq = rand();
+  socket->seq_number = my_seq;
+  /* Your code here XRISTOD*/
+
+  microtcp_header_t header;
+    memset(&header, 0, sizeof(header));
+
+    header.seq_num = htonl(my_seq);
+    header.ack_num = htonl(0);
+    header.data_len = htonl(0);
+    header.window = htons(1024);
+
+    uint16_t flags = (1 << 13);
+    header.control = htons(flags);
+
+    header.checksum = crc32((const uint8_t *)&header, sizeof(header));
+
+    ssize_t bytes_sent = sendto(socket->sd, &header, sizeof(header), 0, address, address_len);
+
+    if (bytes_sent == -1) {
+        return -1;
+    }
+
+    socket->state = SYN_SENT;
 }
 
 int
 microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address,
                  socklen_t address_len)
 {
-
-  /* Your code here */
+  /* Your code here STEF*/
 }
 
 int
