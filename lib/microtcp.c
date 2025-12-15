@@ -76,25 +76,72 @@ microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address,
   /* Your code here XRISTOD*/
 
   microtcp_header_t header;
-    memset(&header, 0, sizeof(header));
+  memset(&header, 0, sizeof(header));
 
-    header.seq_num = htonl(my_seq);
-    header.ack_num = htonl(0);
-    header.data_len = htonl(0);
-    header.window = htons(1024);
+  header.seq_num = my_seq;
+  header.ack_num = 0;
+  header.data_len = 0;
+  header.window = MICROTCP_WIN_SIZE; 
 
-    uint16_t flags = (1 << 13);
-    header.control = htons(flags);
+  // Setting syn=1, Bit 14
+  header.control = (1 << 14 );
 
-    header.checksum = crc32((const uint8_t *)&header, sizeof(header));
+  // Calculate checksum on the raw bytes as they sit in memory
+  header.checksum = crc32((const uint8_t *)&header, sizeof(header));
 
-    ssize_t bytes_sent = sendto(socket->sd, &header, sizeof(header), 0, address, address_len);
+  ssize_t bytes_sent = sendto(socket->sd, &header, sizeof(header), 0, address, address_len);
 
-    if (bytes_sent == -1) {
-        return -1;
-    }
+  if (bytes_sent == -1) {
+      return -1;
+  }
 
-    socket->state = SYN_SENT;
+  socket->state = SYN_SENT;
+
+  microtcp_header_t recv_header;
+  struct sockaddr_in sender_addr;
+  socklen_t sender_len = sizeof(sender_addr);
+
+  while (1) {
+      ssize_t bytes = recvfrom(socket->sd, &recv_header, sizeof(recv_header), 0,
+      (struct sockaddr *)&sender_addr, &sender_len);
+
+      //SOS TO CHECK THIS OUT 
+      //!!
+      //if (bytes < sizeof(microtcp_header_t)) continue;
+      //!! 
+      uint32_t received_csum = recv_header.checksum;
+      recv_header.checksum = 0; // we have to make the check sum field zero, before comparing
+      //since it was zeroed out before checksum was added to the header.
+      if (crc32((const uint8_t *)&recv_header, sizeof(recv_header)) != received_csum) continue;
+
+      uint16_t expected_flags = (1 << 14) | (1 << 12); // SYN + ACK
+      if ((recv_header.control & expected_flags) != expected_flags) continue;
+
+      if (recv_header.ack_num != my_seq + 1) continue;
+
+      break; //If all checks are passed, we reached this point, we leave the loop
+  }
+
+  // Here we update seq,ack variables of the socket
+  // and send the last packet, (3rd of the handshake)
+  socket->ack_number = recv_header.seq_num + 1; //ACK = server.seq + 1
+  socket->seq_number = my_seq + 1; 
+
+  memset(&header, 0, sizeof(header));
+  header.seq_num = socket->seq_number;
+  header.ack_num = socket->ack_number;
+  header.data_len = 0;
+  header.window = MICROTCP_WIN_SIZE;
+  header.control = (1 << 12); // Set ACK flag (Bit 12)
+
+  header.checksum = crc32((const uint8_t *)&header, sizeof(header));
+
+  if (sendto(socket->sd, &header, sizeof(header), 0, address, address_len) == -1) {
+      return -1;
+  }
+
+  socket->state = ESTABLISHED;
+  return 0;
 }
 
 int
@@ -102,6 +149,7 @@ microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address,
                  socklen_t address_len)
 {
   /* Your code here STEF*/
+  //stefo na thimasai to ACK bit prepei na einai 1 sto packet p tha giriseis pisw gia to cconnection
 }
 
 int
@@ -114,6 +162,22 @@ ssize_t
 microtcp_send (microtcp_sock_t *socket, const void *buffer, size_t length,
                int flags)
 {
+  if(socket->state != ESTABLISHED) {
+    return -1; //connection not established
+  }
+
+  microtcp_header_t header;
+  memset(&header, 0, sizeof(header));
+  header.data_len = length;
+  header.window = socket->curr_win_size;
+  header.seq_number = socket->seq_number;
+  header.ack_number = socket->ack_number;
+  
+  header.control = (1 << 12); // Setting ACK=1, Bit 12
+  //because this function is not called for handshaking packets, so ACK = 1
+  header.checksum = crc32((const uint8_t *)&header, sizeof(header));
+
+  //NA TO SINEXISW
   /* Your code here */
 }
 
