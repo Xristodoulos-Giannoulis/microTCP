@@ -35,6 +35,11 @@
 #define MICROTCP_INIT_CWND (3 * MICROTCP_MSS)
 #define MICROTCP_INIT_SSTHRESH MICROTCP_WIN_SIZE
 
+#define MICROTCP_ACK  0x0001
+#define MICROTCP_RST  0x0002 
+#define MICROTCP_SYN  0x0004 
+#define MICROTCP_FIN  0x0008 
+
 /**
  * Possible states of the microTCP socket
  *
@@ -44,6 +49,7 @@
 typedef enum
 {
   LISTEN,
+  HANDSHAKE,
   ESTABLISHED,
   CLOSING_BY_PEER,
   CLOSING_BY_HOST,
