@@ -47,7 +47,6 @@ microtcp_socket (int domain, int type, int protocol)
   this_sock.bytes_lost = 0;
   this_sock.bytes_send = 0;
   return this_sock;
-  /* Your code here */
 
 }
 
@@ -55,12 +54,10 @@ int
 microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address,
                socklen_t address_len)
 {
-  //address_len kinda useless here, maybe because IPv6 and IPv4 have different sizes?
   if ( bind ( socket->sd , address , address_len ) == -1 ) {
     perror ( " BINDING FAILED " );
     exit ( EXIT_FAILURE );
   }
-  /* Your code here */
 }
 
 int
@@ -73,7 +70,6 @@ microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address,
   }
   uint32_t my_seq = rand();
   socket->seq_number = my_seq;
-  /* Your code here XRISTOD*/
 
   microtcp_header_t header;
   memset(&header, 0, sizeof(header));
@@ -105,10 +101,7 @@ microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address,
       ssize_t bytes = recvfrom(socket->sd, &recv_header, sizeof(recv_header), 0,
       (struct sockaddr *)&sender_addr, &sender_len);
 
-      //SOS TO CHECK THIS OUT 
-      //!!
-      //if (bytes < sizeof(microtcp_header_t)) continue;
-      //!! 
+      if (bytes < sizeof(microtcp_header_t)) continue;
       uint32_t received_csum = recv_header.checksum;
       recv_header.checksum = 0; // we have to make the check sum field zero, before comparing
       //since it was zeroed out before checksum was added to the header.
@@ -203,16 +196,34 @@ microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address,
     perror("SEND ERROR");
     exit(EXIT_FAILURE);
   }
-  /* Your code here STEF*/
-  //stefo na thimasai to ACK bit prepei na einai 1 sto packet p tha giriseis pisw gia to cconnection
-  // to gateo mpre na sai kala   - your goat
+  return connection_socket.sd;
 }
 
 int
 microtcp_shutdown (microtcp_sock_t *socket, int how)
 {
 
-  /* Your code here */
+  microtcp_header_t headerReceived;
+  microtcp_header_t headerSent;
+  uint32_t received_checksum;
+
+  if (socket->state == ESTABLISHED) {                 // check for the correct state
+    memset(&headerSent, 0, sizeof(headerSent));
+    headerSent.seq_number = rand();
+    headerSent.control    = MICROTCP_FIN | MICROTCP_ACK;
+    headerSent.window     = socket->curr_win_size;
+
+    headerSent.checksum = 0;
+    headerSent.checksum = crc32((const uint8_t *)&headerSent, sizeof(headerSent));
+
+    sendto(socket->sd, &headerSent, sizeof(headerSent), 0, peer, peer_len);           // send ACK for FIN
+    socket->ack_number = headerReceived->seq_number + 1;                              // update the state of the socket
+    socket->state = CLOSING_BY_PEER;
+  }
+  microtcp_server_finish(peer, &headerReceived, socket, socket_len);                    
+  micro_tcp_client_finish(socket, &headerReceived, peer, peer_len);
+  microtcp_server_finish(peer, &headerReceived, socket, socket_len);
+  
 }
 
 ssize_t
@@ -234,7 +245,6 @@ microtcp_send (microtcp_sock_t *socket, const void *buffer, size_t length,
   //because this function is not called for handshaking packets, so ACK = 1
   header.checksum = crc32((const uint8_t *)&header, sizeof(header));
 
-  //NA TO SINEXISW AN KAI DE XREIAZETAI
   /* Your code here */
 }
 
@@ -244,112 +254,100 @@ microtcp_recv (microtcp_sock_t *socket, void *buffer, size_t length, int flags)
   /* Your code here */
 }
 
-
-void foo () {
-  microtcp_header_t headerReceived;
+void micro_tcp_client_finish(microtcp_sock_t *socket,
+                            microtcp_header_t *headerReceived,
+                            struct sockaddr *peer,
+                            socklen_t peer_len)
+{
   microtcp_header_t headerSent;
-  microtcp_sock_t connection_socket;
   uint32_t received_checksum;
   ssize_t bytesReceived;
   
-  while (1) {                           // wait for incoming FIN
-    bytesReceived = recvfrom(socket->sd, socket->recvbuf, MICROTCP_RECVBUF_LEN, 0,
-                             address, &address_len);
-    if (bytesReceived > 0) {
-      memcpy(&headerReceived, socket->recvbuf, sizeof(microtcp_header_t));
-      if (!(headerReceived.control & MICROTCP_FIN)) {       // error when the packet sent is not a FIN
-        perror("CONTROL ERROR");
-        continue;
-      }
-      microtcp_header_t *hdr = (microtcp_header_t *)socket->recvbuf;
-      received_checksum = headerReceived.checksum;
-      headerReceived.checksum = 0;                         // set checksum  to 0 before calculating it
-      if (crc32((const uint8_t *)&headerReceived, sizeof(headerReceived)) != received_checksum) {
-        perror("CHECKSUM ERROR");
-        continue;
-      }
-      if (bytesReceived < sizeof(microtcp_header_t)) {      // error when packet size is smaller than header size
-        perror("SIZE ERROR");
-        continue;
-      }
+  if (headerReceived != NULL) {
 
-      break;                            // break when first packet without errors is received
+    if ((headerReceived->control & MICROTCP_FIN) &&
+      (headerReceived->control & MICROTCP_ACK)) {         // if client received FIN + ACK
+
+      if (socket->state == ESTABLISHED) {                 // check for the correct state
+
+        memset(&headerSent, 0, sizeof(headerSent));
+        headerSent.seq_number = socket->seq_number;
+        headerSent.ack_number = headerReceived->seq_number + 1;
+        headerSent.control    = MICROTCP_ACK;
+        headerSent.window     = socket->curr_win_size;
+
+        headerSent.checksum = 0;
+        headerSent.checksum = crc32((const uint8_t *)&headerSent, sizeof(headerSent));
+
+        sendto(socket->sd, &headerSent, sizeof(headerSent), 0, peer, peer_len);           // send ACK for FIN
+
+        socket->ack_number = headerReceived->seq_number + 1;                              // update the state of the socket
+        socket->state = CLOSED;
+        return;
+      }
     }
-    else if (bytesReceived == -1) {     // error when recvfrom returns -1
-      perror("RECEIVE ERROR");
-      exit(EXIT_FAILURE);
+    else if (headerReceived->control & MICROTCP_ACK) {    // if server received ACK
+
+      if (socket->state == ESTABLISHED) {
+        socket->state = CLOSING_BY_HOST;
+        return;
+      }
     }
   }
+}
+
+void microtcp_server_finish(microtcp_sock_t *socket,
+                            microtcp_header_t *headerReceived,
+                            struct sockaddr *peer,
+                            socklen_t peer_len)
+{
+  microtcp_header_t headerSent;
+  microtcp_header_t headerSent2;
+  uint32_t received_checksum;
+  ssize_t bytesReceived;
   
-  memset(&headerSent, 0, sizeof(headerSent));
-  headerSent.seq_number = rand();
-  headerSent.ack_number = headerReceived.seq_number + 1;
-  headerSent.data_len = 0;
-  headerSent.window = MICROTCP_WIN_SIZE;
-  headerSent.control = ACK;                                                // set ACK flag
-  headerSent.future_use0 = 0;                                              // must set checksum and unused fields to 0
-  headerSent.future_use1 = 0;
-  headerSent.future_use2 = 0; 
-  headerSent.checksum = 0;
-  headerSent.checksum = crc32((const uint8_t *)&headerSent, sizeof(headerSent));
-  if (sendto(connection_socket.sd, &headerSent, sizeof(headerSent), 0, address, address_len) == -1) {
-    perror("SEND ERROR");
-    exit(EXIT_FAILURE);
-  }
+  if (headerReceived != NULL) {
 
-  connection_socket.state = CLOSING_BY_PEER;
-  connection_socket.seq_number = headerSent.seq_number;                                    // make the state up to date
-  connection_socket.ack_number = headerReceived.seq_number + 1;
+    if ((headerReceived->control & MICROTCP_FIN) &&
+      (headerReceived->control & MICROTCP_ACK)) {         // if server received FIN + ACK
 
-  // WHEN DONE....
+      if (socket->state == ESTABLISHED) {                 // check for the correct state
 
-  memset(&headerSent, 0, sizeof(headerSent));
-  headerSent.seq_number = rand();
-  headerSent.ack_number = headerReceived.seq_number + 1;
-  headerSent.data_len = 0;
-  headerSent.window = MICROTCP_WIN_SIZE;
-  headerSent.control = FIN;                                                // set FIN flag
-  headerSent.future_use0 = 0;                                              // must set checksum and unused fields to 0
-  headerSent.future_use1 = 0;
-  headerSent.future_use2 = 0; 
-  headerSent.checksum = 0;
-  headerSent.checksum = crc32((const uint8_t *)&headerSent, sizeof(headerSent));
-  if (sendto(connection_socket.sd, &headerSent, sizeof(headerSent), 0, address, address_len) == -1) {
-    perror("SEND ERROR");
-    exit(EXIT_FAILURE);
-  }
+        memset(&headerSent, 0, sizeof(headerSent));
+        headerSent.seq_number = socket->seq_number;
+        headerSent.ack_number = headerReceived->seq_number + 1;
+        headerSent.control    = MICROTCP_ACK;
+        headerSent.window     = socket->curr_win_size;
 
-  connection_socket.state = CLOSING_BY_PEER;
-  connection_socket.seq_number = headerSent.seq_number;                                    // make the state up to date
-  connection_socket.ack_number = headerReceived.seq_number + 1;
+        headerSent.checksum = 0;
+        headerSent.checksum = crc32((const uint8_t *)&headerSent, sizeof(headerSent));
 
-  while (1) {                                               // wait for incoming ACK
-    bytesReceived = recvfrom(socket->sd, socket->recvbuf, MICROTCP_RECVBUF_LEN, 0,
-                             address, &address_len);
-    if (bytesReceived > 0) {
-      memcpy(&headerReceived, socket->recvbuf, sizeof(microtcp_header_t));
-      if (!(headerReceived.control & MICROTCP_ACK)) {       // error when the packet sent is not an ACK
-        perror("CONTROL ERROR");
-        continue;
+        sendto(socket->sd, &headerSent, sizeof(headerSent), 0, peer, peer_len);           // send ACK for FIN
+
+        socket->ack_number = headerReceived->seq_number + 1;                              // update the state of the socket
+        socket->state = CLOSING_BY_PEER;
       }
-      microtcp_header_t *hdr = (microtcp_header_t *)socket->recvbuf;
-      received_checksum = headerReceived.checksum;
-      headerReceived.checksum = 0;                         // set checksum  to 0 before calculating it
-      if (crc32((const uint8_t *)&headerReceived, sizeof(headerReceived)) != received_checksum) {
-        perror("CHECKSUM ERROR");
-        continue;
-      }
-      if (bytesReceived < sizeof(microtcp_header_t)) {      // error when packet size is smaller than header size
-        perror("SIZE ERROR");
-        continue;
-      }
-
-      break;                            // break when first packet without errors is received
     }
-    else if (bytesReceived == -1) {     // error when recvfrom returns -1
-      perror("RECEIVE ERROR");
-      exit(EXIT_FAILURE);
+    else if (headerReceived->control & MICROTCP_ACK) {    // if server received ACK
+
+      if (socket->state == CLOSING_BY_PEER) {
+        socket->state = CLOSED;
+        return;
+      }
     }
   }
-  connection_socket.state = CLOSED;     // server side connection is closed after the final ACK is received
+  if (socket->state == CLOSING_BY_PEER) {             // send FIN + ACK
+    memset(&headerSent2, 0, sizeof(headerSent2));
+    headerSent2.seq_number = socket->seq_number;
+    headerSent2.ack_number = socket->ack_number;
+    headerSent2.control    = MICROTCP_FIN | MICROTCP_ACK;
+    headerSent2.window     = socket->curr_win_size;
+
+    headerSent2.checksum = 0;
+    headerSent2.checksum = crc32((const uint8_t *)&headerSent2, sizeof(headerSent2));
+    
+    sendto(socket->sd, &headerSent2, sizeof(headerSent2), 0, peer, peer_len);
+    socket->seq_number = rand();
+    return;
+  }
 }
