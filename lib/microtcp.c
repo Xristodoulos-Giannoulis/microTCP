@@ -20,6 +20,9 @@
 
 #include "microtcp.h"
 #include "../utils/crc32.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 microtcp_sock_t
 microtcp_socket (int domain, int type, int protocol)
